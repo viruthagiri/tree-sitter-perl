@@ -309,8 +309,7 @@ $[;
   (expression_statement
     (scalar
       (varname)))
-  (ERROR
-    (UNEXPECTED '''))
+  (ERROR)
   (expression_statement
     (scalar
       (varname))))

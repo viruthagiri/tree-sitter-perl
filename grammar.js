@@ -532,6 +532,14 @@ module.exports = grammar({
       $.primitive,
 
       $._literal,
+
+      // Error recovery: adjacent string literals with missing separator.
+      // Very low priority — never wins in normal parsing. But it puts '"' etc.
+      // in the FOLLOW set of string literals, teaching the internal lexer about
+      // quote chars in post-expression states. Without this,
+      // skip_unrecognized_character eats quote chars because they're
+      // external-only tokens invisible to the internal lexer.
+      prec(-1000, seq(choice($._literal, $.primitive), token(choice('"', "'", '`')))),
     ),
 
     // this does NOT take an indirob, it only takes a single scalar. what we'll have to do
