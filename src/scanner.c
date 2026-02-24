@@ -69,6 +69,8 @@ enum TokenType {
   TOKEN_NO_INTERP_WHITESPACE_ZW,
   /* zero-width high priority token */
   TOKEN_NONASSOC,
+  /* synthetic close paren at EOF */
+  TOKEN_PERLY_PAREN_CLOSE,
   /* error condition is always last */
   TOKEN_ERROR
 };
@@ -516,7 +518,13 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
       }
     }
   }
-  if (lexer->eof(lexer)) return false;
+  if (lexer->eof(lexer)) {
+    if (valid_symbols[TOKEN_PERLY_PAREN_CLOSE]) {
+      DEBUG("Fake PERLY_PAREN_CLOSE at EOF\n", 0);
+      TOKEN(TOKEN_PERLY_PAREN_CLOSE);
+    }
+    return false;
+  }
 
   if (valid_symbols[TOKEN_OPEN_FILEGLOB_BRACKET] || valid_symbols[TOKEN_OPEN_READLINE_BRACKET] || valid_symbols[PERLY_HEREDOC]) {
       if (c == '<') {

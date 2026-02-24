@@ -151,6 +151,8 @@ module.exports = grammar({
     $._no_interp_whitespace_zw,
     /* zero-width high priority token */
     $._NONASSOC,
+    /* synthetic close paren at EOF (like _PERLY_SEMICOLON for ';') */
+    $._PERLY_PAREN_CLOSE,
     /* error condition must always be last; we don't use this in the grammar */
     $._ERROR
   ],
@@ -793,8 +795,8 @@ module.exports = grammar({
       seq(field('function', alias($.amper_sub, $.function))),
       // the usage of NONASSOC here is to make it that any parse of a paren after a func
       // automatically becomes a non-ambiguous function call
-      seq(field('function', $._unambiguous_function), '(', $._NONASSOC, optional(field('arguments', $._expr)), ')'),
-      seq(field('function', $._unambiguous_function), '(', $._NONASSOC, $.indirect_object, field('arguments', $._expr), ')'),
+      seq(field('function', $._unambiguous_function), '(', $._NONASSOC, optional(field('arguments', $._expr)), choice(')', $._PERLY_PAREN_CLOSE)),
+      seq(field('function', $._unambiguous_function), '(', $._NONASSOC, $.indirect_object, field('arguments', $._expr), choice(')', $._PERLY_PAREN_CLOSE)),
     ),
     _tricky_indirob_hashref: $ => seq($._PERLY_BRACE_OPEN, $._expr, $._PERLY_SEMICOLON, '}'),
     ambiguous_function_call_expression: $ =>
@@ -817,7 +819,7 @@ module.exports = grammar({
       '->',
       optional('&'),
       field('method', $.method),
-      optseq('(', optional(field('arguments', $._expr)), ')')
+      optseq('(', optional(field('arguments', $._expr)), choice(')', $._PERLY_PAREN_CLOSE))
     )),
     method: $ => choice($._bareword, $.scalar),
 
