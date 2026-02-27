@@ -458,7 +458,11 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
   if (iswspace(c) && valid_symbols[TOKEN_NO_INTERP_WHITESPACE_ZW]) {
     TOKEN(TOKEN_NO_INTERP_WHITESPACE_ZW);
   }
-  skip_ws_to_eol(lexer);
+  // Don't skip whitespace when inside string content — the newline and
+  // spaces are part of the string, not inter-token whitespace.
+  bool in_string_content = !is_ERROR &&
+    (valid_symbols[TOKEN_Q_STRING_CONTENT] || valid_symbols[TOKEN_QQ_STRING_CONTENT]);
+  if (!in_string_content) skip_ws_to_eol(lexer);
   /* heredocs override everything, so they must be here before */
   if (valid_symbols[TOKEN_HEREDOC_START]) {
     if (state->heredoc_state == HEREDOC_START && lexer->get_column(lexer) == 0) {
@@ -498,7 +502,7 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
     TOKEN(TOKEN_ATTRIBUTE_VALUE);
   }
 
-  if (is_tsp_whitespace(c)) {
+  if (is_tsp_whitespace(c) && !in_string_content) {
     // NOTE - the first whitespace skipping is skip_ws_to_eol over in heredoc
     // handling
     skipped_whitespace = true;
@@ -837,7 +841,7 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
         ADVANCE_C;
         MARK_END;
         seen_newline = true;
-        continue;
+        break;
       }
       ADVANCE_C;
     }
