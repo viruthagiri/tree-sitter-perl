@@ -843,12 +843,46 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
     }
 
     if (valid) {
-      if (!c && seen_newline) {
-        // Hit EOF without finding the closer — truncate at the first newline.
-        // Mark the quote as truncated so we don't re-enter this loop.
-        DEBUG("Truncating string content at EOL (closer not found before EOF)\n", 0);
+      if (seen_newline && state->quotes.size > 0) {
+        // We crossed a newline. Check if the string ever closes.
         TSPQuote *current = array_back(&state->quotes);
-        current->truncated = true;
+        if (!c) {
+          // Already at EOF — truncate at the first newline.
+          DEBUG("Truncating string content at EOL (EOF in content loop)\n", 0);
+          current->truncated = true;
+        } else {
+          // Broke on interpolation escape or backslash. Lookahead to check
+          // if the closing delimiter exists before EOF. The token end stays
+          // at the newline (from MARK_END); tree-sitter resets the lexer
+          // there on return regardless of how far we advance here.
+          int32_t closer_char = current->close;
+          int32_t opener_char = current->open; // 0 for non-paired
+          int nesting = current->count;
+
+          bool found_closer = false;
+          while (c) {
+            if (c == '\\') {
+              ADVANCE_C; // skip backslash
+              if (c) ADVANCE_C; // skip escaped char
+              continue;
+            }
+            if (opener_char && c == opener_char) {
+              nesting++;
+            } else if (c == closer_char) {
+              if (nesting == 0) {
+                found_closer = true;
+                break;
+              }
+              nesting--;
+            }
+            ADVANCE_C;
+          }
+
+          if (!found_closer) {
+            DEBUG("Truncating string content at EOL (closer not found in lookahead)\n", 0);
+            current->truncated = true;
+          }
+        }
       }
       if (is_qq)
         TOKEN(TOKEN_QQ_STRING_CONTENT);
