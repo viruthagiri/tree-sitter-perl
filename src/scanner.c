@@ -117,9 +117,10 @@ static int32_t close_for_open(int32_t c) {
 
 typedef struct {
   int32_t open, close, count;
+  bool truncated; // set when string content was truncated at EOL due to missing closer
 } TSPQuote;
 
-static TSPQuote tspquote_new() { return (TSPQuote){0, 0, 0}; }
+static TSPQuote tspquote_new() { return (TSPQuote){0, 0, 0, false}; }
 
 enum HeredocState { HEREDOC_NONE, HEREDOC_START, HEREDOC_UNKNOWN, HEREDOC_CONTINUE, HEREDOC_END };
 typedef struct {
@@ -801,8 +802,16 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
   }
 
   if (valid_symbols[TOKEN_Q_STRING_CONTENT] || valid_symbols[TOKEN_QQ_STRING_CONTENT]) {
+    // If the current quote was already truncated at EOL, don't produce more
+    // content — fall through to let quotelike_end produce a synthetic closer.
+    if (state->quotes.size > 0) {
+      TSPQuote *current = array_back(&state->quotes);
+      if (current->truncated) goto after_string_content;
+    }
+
     bool is_qq = valid_symbols[TOKEN_QQ_STRING_CONTENT];
     bool valid = false;
+    bool seen_newline = false;
 
     while (c) {
       if (c == '\\') break;
@@ -821,16 +830,33 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
       }
 
       valid = true;
+      // On the first newline, save this position as a fallback end point.
+      // If the closer is found later, we'll MARK_END there instead.
+      // If EOF is hit, the token ends here (at the newline).
+      if (c == '\n' && !seen_newline) {
+        ADVANCE_C;
+        MARK_END;
+        seen_newline = true;
+        continue;
+      }
       ADVANCE_C;
     }
 
     if (valid) {
+      if (!c && seen_newline) {
+        // Hit EOF without finding the closer — truncate at the first newline.
+        // Mark the quote as truncated so we don't re-enter this loop.
+        DEBUG("Truncating string content at EOL (closer not found before EOF)\n", 0);
+        TSPQuote *current = array_back(&state->quotes);
+        current->truncated = true;
+      }
       if (is_qq)
         TOKEN(TOKEN_QQ_STRING_CONTENT);
       else
         TOKEN(TOKEN_Q_STRING_CONTENT);
     }
   }
+  after_string_content:
 
   if (valid_symbols[TOKEN_QUOTELIKE_MIDDLE_CLOSE]) {
     int32_t quote_index = lexerstate_is_quote_closer(state, c);
@@ -848,6 +874,17 @@ bool tree_sitter_perl_external_scanner_scan(void *payload, TSLexer *lexer,
       ADVANCE_C;
       lexerstate_pop_quote(state, quote_index);
       TOKEN(TOKEN_QUOTELIKE_END);
+    }
+
+    // Truncated quote — produce synthetic closer (zero-width) so the parser
+    // can close the string literal and recover for subsequent lines.
+    if (state->quotes.size > 0) {
+      TSPQuote *current = array_back(&state->quotes);
+      if (current->truncated) {
+        DEBUG("Synthetic QUOTELIKE_END for truncated string\n", 0);
+        lexerstate_pop_quote(state, state->quotes.size);
+        TOKEN(TOKEN_QUOTELIKE_END);
+      }
     }
   }
 
