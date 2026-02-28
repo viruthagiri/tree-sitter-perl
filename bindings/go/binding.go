@@ -1,6 +1,6 @@
 package tree_sitter_perl
 
-// #cgo CFLAGS: -std=c11 -fPIC -I../../src
+// #cgo CFLAGS: -std=c11 -fPIC -Wno-attributes -I../../src
 // #include "../../src/parser.c"
 // #include "../../src/scanner.c"
 import "C"
